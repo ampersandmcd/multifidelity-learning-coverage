@@ -5,14 +5,14 @@ Experimental engine to run learning+coverage algorithms.
 """
 
 from algorithms import cortes, todescato, dslc
-from utils import Experiment, Data, Log, Plotter
+from utils import Experiment, Data, Logger, Plotter
 
 if __name__ == "__main__":
 
     name = "forrester2007"
     experiment = Experiment(name)
     data = Data(name)
-    log = Log(name)
+    log = Logger(name)
     plotter = Plotter(name)
 
     for algorithm in experiment.algorithms:

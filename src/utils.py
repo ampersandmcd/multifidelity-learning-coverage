@@ -70,7 +70,7 @@ class Data:
         self.f_low = np.loadtxt(f"../data/{name}_lofi.csv", delimiter=",")
 
 
-class Log:
+class Logger:
     """
     Object used to store experimental (output) results.
     """

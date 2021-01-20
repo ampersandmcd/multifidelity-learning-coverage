@@ -8,7 +8,7 @@ import numpy as np
 import utils
 
 
-def cortes(experiment, data, log, plotter, fidelity, sim):
+def cortes(experiment, data, logger, plotter, fidelity, sim):
 
     # initialize random starting positions
     positions = np.random.rand(experiment.n_agents, 2)      # agent i position is in row i with [x, y]
@@ -26,7 +26,7 @@ def cortes(experiment, data, log, plotter, fidelity, sim):
         regret = utils.compute_regret(positions, data, partition)
 
         # log and plot progress
-        log.log(sim, iteration, positions, partition, centroids, distance, loss, regret)
+        logger.log(sim, iteration, positions, partition, centroids, distance, loss, regret)
         plotter.plot(positions, data, partition, estimate=data.f_high, estimate_var=0, regret=regret)
 
         # update partition and centroids given perfect knowledge
@@ -38,9 +38,9 @@ def cortes(experiment, data, log, plotter, fidelity, sim):
         positions = np.copy(centroids)
 
 
-def todescato(experiment, data, log, plotter, fidelity, sim):
+def todescato(experiment, data, logger, plotter, fidelity, sim):
     pass
 
 
-def dslc(experiment, data, log, plotter, fidelity, sim):
+def dslc(experiment, data, logger, plotter, fidelity, sim):
     pass
