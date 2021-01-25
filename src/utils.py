@@ -11,6 +11,7 @@ from matplotlib import gridspec
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 import constants
+from gp import SFGP, MFGP
 
 
 #
@@ -55,7 +56,7 @@ class Data:
     """
     Object used to store experimental (input) data.
     """
-    __slots__ = ["name", "xx", "yy", "f_high", "f_low"]
+    __slots__ = ["name", "x1", "x2", "f_high", "f_low"]
 
     def __init__(self, name):
         """
@@ -64,8 +65,8 @@ class Data:
         :param name: Name of experiment.
         """
         self.name = name
-        self.xx = np.loadtxt(f"../data/{name}_xx.csv", delimiter=",")
-        self.yy = np.loadtxt(f"../data/{name}_yy.csv", delimiter=",")
+        self.x1 = np.loadtxt(f"../data/{name}_x1.csv", delimiter=",")
+        self.x2 = np.loadtxt(f"../data/{name}_x2.csv", delimiter=",")
         self.f_high = np.loadtxt(f"../data/{name}_hifi.csv", delimiter=",")
         self.f_low = np.loadtxt(f"../data/{name}_lofi.csv", delimiter=",")
 
@@ -85,29 +86,34 @@ class Logger:
         self.name = name
         self.results = []
 
-    def log(self, sim, iteration, positions, partition, centroids, distance, loss, regret):
+    def log(self, name, sim, iteration, fidelity, positions, centroids, max_var, argmax_var, p_explore, explore, distance, loss, regret):
         """
         Add an experimental result to the list of results.
         List of results stores dictionaries and will ultimately be converted to a DataFrame.
 
         :return: None.
         """
-        result = []
-        for agent in positions.shape[0]:
+        for agent in range(positions.shape[0]):
             info = {
+                "name": name,
+                "fidelity": fidelity,
                 "sim": sim,
                 "iteration": iteration,
-                "x": positions[agent, 0],
-                "y": positions[agent, 1],
-                "centroid_x": centroids[agent, 0],
-                "centroid_y": centroids[agent, 1],
-                "distance": distance,
+                "agent": agent,
+                "x1": positions[agent, 0],
+                "x2": positions[agent, 1],
+                "centroid_x1": centroids[agent, 0],
+                "centroid_x2": centroids[agent, 1],
+                "max_var": max_var[agent],
+                "argmax_var_x1": argmax_var[agent, 0],
+                "argmax_var_x2": argmax_var[agent, 1],
+                "p_explore": p_explore[agent],
+                "explore": explore[agent],
+                "distance": distance[agent],
                 "loss": loss,
                 "regret": regret
             }
-            result.append(info)
-
-        self.results.append(result)
+            self.results.append(info)
 
     def save(self):
         """
@@ -123,7 +129,7 @@ class Plotter:
     """
     Object used to visualize algorithm progression.
     """
-    __slots__ = ["name", "fig", "spec", "axes", "regret"]
+    __slots__ = ["name", "fig", "spec", "axes", "regret", "f_levels", "var_levels", "active"]
 
     def __init__(self, name):
         """
@@ -131,40 +137,42 @@ class Plotter:
 
         :param name: Name of experiment.
         """
+        # optional setting to disable plotter
+        self.active = True
+
+        # short-circuit if disabled
+        if not self.active:
+            return
+
+        # configure plotter
         self.name = name
         self.regret = []
         self.fig = plt.figure(num=0, figsize=(16, 9), dpi=120, facecolor='w')
+        self.fig.subplots_adjust(wspace=0.5, hspace=0.5)
         self.spec = gridspec.GridSpec(ncols=4, nrows=3, figure=self.fig,
                                       width_ratios=[1, 1, 1, 1],  # full figures, colorbars
                                       height_ratios=[0.4, 1, 1])  # title, figures
 
         # store axes in a dict by keyword
         self.axes = {}
-        self.axes["title"] = self.fig.add_subplot(self.spec[0, :])
+        self.axes["title"] = ax = self.fig.add_subplot(self.spec[0, :])
+        ax.axis("off")
 
         self.axes["partitions"] = ax = self.fig.add_subplot(self.spec[1, 0])
-        ax.set_title("Partitions")
-        ax.set_xlim(0, 1)
-        ax.set_ylim(0, 1)
+        self.set_lims_and_title(ax, "Partitions")
 
         self.axes["samples"] = ax = self.fig.add_subplot(self.spec[1, 1])
-        ax.set_title("Samples")
-        ax.set_xlim(0, 1)
-        ax.set_ylim(0, 1)
+        self.set_lims_and_title(ax, "Samples")
 
         self.axes["mean"] = ax = self.fig.add_subplot(self.spec[1, 2])
-        ax.set_title("Posterior Mean")
-        ax.set_xlim(0, 1)
-        ax.set_ylim(0, 1)
+        self.set_lims_and_title(ax, "Posterior Mean")
         divider = make_axes_locatable(ax)
         cax = divider.new_horizontal(size="5%", pad=0.1, pack_start=False)
         self.fig.add_axes(cax)
         self.axes["meancbar"] = cax
 
         self.axes["var"] = ax = self.fig.add_subplot(self.spec[1, 3])
-        ax.set_title("Posterior Variance")
-        ax.set_xlim(0, 1)
-        ax.set_ylim(0, 1)
+        self.set_lims_and_title(ax, "Posterior Variance")
         divider = make_axes_locatable(ax)
         cax = divider.new_horizontal(size="5%", pad=0.1, pack_start=False)
         self.fig.add_axes(cax)
@@ -173,60 +181,130 @@ class Plotter:
         self.axes["regret"] = ax = self.fig.add_subplot(self.spec[2, 0:2])
         ax.set_title("Cumulative Regret")
 
-        self.axes["lofi"] = ax = self.fig.add_subplot(self.spec[2, 2])
-        ax.set_title("Low Fidelity Truth")
-        ax.set_xlim(0, 1)
-        ax.set_ylim(0, 1)
+        self.axes["lofi"] = ax = self.fig.add_subplot(self.spec[2, 3])
+        self.set_lims_and_title(ax, "Low Fidelity Truth")
+
         divider = make_axes_locatable(ax)
         cax = divider.new_horizontal(size="5%", pad=0.1, pack_start=False)
         self.fig.add_axes(cax)
         self.axes["loficbar"] = cax
 
-        self.axes["hifi"] = ax = self.fig.add_subplot(self.spec[2, 3])
-        ax.set_title("High Fidelity Truth")
-        ax.set_xlim(0, 1)
-        ax.set_ylim(0, 1)
+        self.axes["hifi"] = ax = self.fig.add_subplot(self.spec[2, 2])
+        self.set_lims_and_title(ax, "High Fidelity Truth")
         divider = make_axes_locatable(ax)
         cax = divider.new_horizontal(size="5%", pad=0.1, pack_start=False)
         self.fig.add_axes(cax)
         self.axes["hificbar"] = cax
 
+        # levels for contour plots
+        self.f_levels = np.linspace(0, constants.f_max, constants.levels)
+        self.var_levels = np.linspace(0, 0.05, constants.levels)
+
+    def set_lims_and_title(self, ax, title):
+        """
+        Helper function to set limits and title on axes.
+        :param ax: Axes object.
+        :param title: Text to display on title.
+        :return: None. Modifies Axes object.
+        """
+        ax.set_title(title)
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1)
+
     def plot(self, positions, data, partition, estimate, estimate_var, regret):
         """
         Plot current simulation status
         """
+        # short-circuit if disabled
+        if not self.active:
+            return
+
+        # clear non-title axes
+        for name, ax in self.axes.items():
+            if name != "title":
+                ax.cla()
+
         # plot partitions and label agents
-        self.axes["partitions"].scatter(x=data.xx, y=data.yy, c=partition, marker="s", s=100)
+        self.axes["partitions"].scatter(x=data.x1, y=data.x2, c=partition, marker="s", s=100)
         self.axes["partitions"].scatter(x=positions[:, 0], y=positions[:, 1], c="k", marker="o")
         for i in range(positions.shape[0]):
             self.axes["partitions"].text(x=positions[i, 0] + constants.dx,
                                          y=positions[i, 1] + constants.dx,
                                          s=str(i), fontsize=12)
+        self.set_lims_and_title(self.axes["partitions"], "Partitions")
+
 
         # plot samples
         self.axes["samples"].text(x=0.5, y=0.5, s="Need to implement", ha="center", va="center")
+        self.set_lims_and_title(self.axes["samples"], "Samples")
 
         # plot mean
-        self.axes["mean"].contourf(x=data.xx, y=data.yy, z=estimate)
+        im = self.axes["mean"].contourf(data.x1, data.x2, estimate, levels=self.f_levels)
+        plt.colorbar(im, cax=self.axes["meancbar"])
+        self.set_lims_and_title(self.axes["mean"], "Posterior Mean")
+
 
         # plot var
-        self.axes["var"].contourf(x=data.xx, y=data.yy, z=estimate_var)
+        im = self.axes["var"].contourf(data.x1, data.x2, estimate_var, levels=self.var_levels)
+        plt.colorbar(im, cax=self.axes["varcbar"])
+        self.set_lims_and_title(self.axes["var"], "Posterior Variance")
 
         # plot lofi
-        self.axes["lofi"].contourf(x=data.xx, y=data.yy, z=data.f_low)
+        im = self.axes["lofi"].contourf(data.x1, data.x2, data.f_low, levels=self.f_levels)
+        plt.colorbar(im, cax=self.axes["loficbar"])
+        self.set_lims_and_title(self.axes["lofi"], "Low Fidelity Truth")
 
         # plot hifi
-        self.axes["hifi"].contourf(x=data.xx, y=data.yy, z=data.f_high)
+        im = self.axes["hifi"].contourf(data.x1, data.x2, data.f_high, levels=self.f_levels)
+        plt.colorbar(im, cax=self.axes["hificbar"])
+        self.set_lims_and_title(self.axes["hifi"], "High Fidelity Truth")
 
         # plot regret
         self.regret.append(regret)
         self.axes["regret"].plot([i for i in range(len(self.regret))], self.regret, 'ko-')
         self.axes["regret"].ticklabel_format(axis="y", style="sci", scilimits=(-3, -3))
+        self.axes["regret"].set_title("Cumulative Regret")
 
+        # show figure
+        self.fig.show()
 
 #
 # Begin function definitions.
 #
+
+
+def initialize_gp(experiment, data, fidelity, rng):
+
+    # select low-fidelity training data with n_prior_points
+    X = np.hstack((data.x1.reshape(-1, 1), data.x2.reshape(-1, 1)))
+    y_low = data.f_low.reshape(-1, 1)
+    idx = np.arange(X.shape[0])
+    train_idx = rng.choice(idx, size=experiment.n_prior_points, replace=False)
+    X_train, y_low_train = X[train_idx, :], y_low[train_idx, :]
+
+    # compute means for unit prior information
+    X_mean, y_low_mean = np.mean(X_train, axis=0).reshape(1, 2), np.mean(y_low_train).reshape(1, 1)
+
+    # select and initialize model according to fidelity
+    if fidelity == "null_single":
+        # assume unit prior information to avoid computational errors
+        model = SFGP(X_mean, y_low_mean)
+        model.hyp = np.loadtxt(f"../data/{experiment.name}_sfgp_hyp.csv", delimiter=",")
+        model.update()
+    elif fidelity == "single":
+        # use prior information given by n_prior_points
+        model = SFGP(X_train, y_low_train)
+        model.hyp = np.loadtxt(f"../data/{experiment.name}_sfgp_hyp.csv", delimiter=",")
+        model.update()
+    elif fidelity == "multi":
+        # use prior information given by n_prior_points for lofi and unit prior for hifi to avoid computational errors
+        model = MFGP(X_train, y_low_train, X_mean, y_low_mean)
+        model.hyp = np.loadtxt(f"../data/{experiment.name}_mfgp_hyp.csv", delimiter=",")
+        model.update()
+    else:
+        raise ValueError("Unrecognized fidelity level chosen.")
+
+    return model
 
 
 def compute_partition(positions, data, prev_partition, gossip):
@@ -237,11 +315,11 @@ def compute_partition(positions, data, prev_partition, gossip):
         for i in range(positions.shape[0]):
             for j in range(i, positions.shape[0]):
                 # check if agent i, j are neighbors by finding min dist between their assigned points
-                xx_i = data.xx[prev_partition == i]
-                yy_i = data.yy[prev_partition == i]
-                xx_j = data.xx[prev_partition == j]
-                yy_j = data.yy[prev_partition == j]
-                dists = (xx_i - xx_j) ** 2 + (yy_i - yy_j) ** 2
+                x1_i = data.x1[prev_partition == i]
+                x2_i = data.x2[prev_partition == i]
+                x1_j = data.x1[prev_partition == j]
+                x2_j = data.x2[prev_partition == j]
+                dists = (x1_i - x1_j) ** 2 + (x2_i - x2_j) ** 2
                 if np.isclose(np.amin(dists), constants.dx):
                     # these agents are neighbors
                     neighbors.append((i, j))
@@ -256,24 +334,25 @@ def compute_partition(positions, data, prev_partition, gossip):
                     # now, determine which agent this point is closer to
                     min_dist = np.inf
                     for agent in random_edge:
-                        dx = data.xx[i, j] - positions[agent, 0]
-                        dy = data.yy[i, j] - positions[agent, 1]
+                        dx = data.x1[i, j] - positions[agent, 0]
+                        dy = data.x2[i, j] - positions[agent, 1]
                         dist = dx ** 2 + dy ** 2
                         if dist < min_dist:
                             assignments[i, j] = agent
 
     else:
 
-        assignments = np.zeros(shape=data.xx.shape)
-        for i in range(data.xx.shape[0]):
-            for j in range(data.xx.shape[1]):
+        assignments = np.zeros(shape=data.x1.shape)
+        for i in range(data.x1.shape[0]):
+            for j in range(data.x1.shape[1]):
                 # find agent closest to this point and update assignment accordingly
                 min_dist = np.inf
-                for agent in positions.shape[0]:
-                    dx = data.xx[i, j] - positions[agent, 0]
-                    dy = data.yy[i, j] - positions[agent, 1]
+                for agent in range(positions.shape[0]):
+                    dx = data.x1[i, j] - positions[agent, 0]
+                    dy = data.x2[i, j] - positions[agent, 1]
                     dist = dx ** 2 + dy ** 2
                     if dist < min_dist:
+                        min_dist = dist
                         assignments[i, j] = agent
 
     return assignments
@@ -281,21 +360,22 @@ def compute_partition(positions, data, prev_partition, gossip):
 
 def compute_centroids(positions, data, partition, estimate):
 
-    centroids = np.zeros(shape=positions)
+    centroids = np.zeros(shape=positions.shape)
     for i in range(positions.shape[0]):
+
         # find points in agent i's cell
-        xx_i = data.xx[partition == i]
-        yy_i = data.yy[partition == i]
+        x1_i = data.x1[partition == i]
+        x2_i = data.x2[partition == i]
         estimate_i = estimate[partition == i]
         area_i = len(estimate_i) * (constants.dx ** 2)
 
         # compute weighted points and integral
         total_weight = np.mean(estimate_i) * area_i
-        weighted_xx_i = np.mean(xx_i * estimate_i) * area_i
-        weighted_yy_i = np.mean(yy_i * estimate_i) * area_i
-        centroid_xx = weighted_xx_i / total_weight
-        centroid_yy = weighted_yy_i / total_weight
-        centroid = np.concatenate((centroid_xx, centroid_yy)).reshape(1, 2)
+        weighted_x1_i = np.mean(x1_i * estimate_i) * area_i
+        weighted_x2_i = np.mean(x2_i * estimate_i) * area_i
+        centroid_x1 = weighted_x1_i / total_weight
+        centroid_x2 = weighted_x2_i / total_weight
+        centroid = np.array([centroid_x1, centroid_x2])
 
         # snap centroid to nearest discretized point
         multiplier = np.round(1 / constants.dx, decimals=4)
@@ -303,6 +383,27 @@ def compute_centroids(positions, data, partition, estimate):
         centroids[i, :] = centroid
 
     return centroids
+
+
+def compute_max_var(positions, data, partition, estimate_var):
+
+    max_var, argmax_var = np.zeros(shape=positions.shape[0]), np.zeros(shape=positions.shape)
+    for i in range(positions.shape[0]):
+
+        # find points in agent i's cell
+        x1_i = data.x1[partition == i]
+        x2_i = data.x2[partition == i]
+        estimate_var_i = estimate_var[partition == i]
+
+        # compute max and argmax
+        max_var_i = np.amax(estimate_var_i)
+        idx = np.argmax(estimate_var_i)
+        argmax_var_i = np.array([x1_i[idx], x2_i[idx]])
+
+        # save max and argmax of this cell
+        max_var[i], argmax_var[i, :] = max_var_i, argmax_var_i
+
+    return max_var, argmax_var
 
 
 def compute_distance(positions, prev_positions):
@@ -315,15 +416,15 @@ def compute_loss(positions, data, partition):
     true_centroids = compute_centroids(positions, data, partition, estimate=data.f_high)
     for i in range(positions.shape[0]):
         # find points in agent i's cell
-        xx_i = data.xx[partition == i]
-        yy_i = data.yy[partition == i]
+        x1_i = data.x1[partition == i]
+        x2_i = data.x2[partition == i]
         f_i = data.f_high[partition == i]
 
         # compute weighted squared-distance loss to each point
         centroid = true_centroids[i, :]
-        sq_dists = (xx_i - centroid[0]) ** 2 + (yy_i - centroid[1]) ** 2
+        sq_dists = (x1_i - centroid[0]) ** 2 + (x2_i - centroid[1]) ** 2
         weighted_sq_dists = f_i * sq_dists
-        area_i = len(xx_i) * (constants.dx ** 2)
+        area_i = len(x1_i) * (constants.dx ** 2)
         loss_i = np.mean(weighted_sq_dists) * area_i
         loss += loss_i
 
@@ -346,3 +447,8 @@ def compute_regret(positions, data, partition):
     # compute regret following definition 2 in DSLC paper https://arxiv.org/abs/2101.04306
     regret = 2 * loss - position_loss - partition_loss
     return regret
+
+
+def compute_todescato_explore(max_var, max_var_0):
+
+    return np.sqrt(max_var / max_var_0)
