@@ -1,5 +1,5 @@
 """
-gaussian_process.py
+gp.py
 
 Implementation of single- and multi-fidelity Gaussian Process learning models capable of hyperparameter
 inference and mean/variance prediction.
