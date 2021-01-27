@@ -4,6 +4,9 @@ utils.py
 Helper classes and functions for implementation of multifidelity learning+coverage algorithms.
 """
 
+import copy
+import sys
+
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -12,6 +15,10 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 import constants
 from gp import SFGP, MFGP
+
+import six
+sys.modules['sklearn.externals.six'] = six  # Workaround to import MLRose https://stackoverflow.com/a/62354885
+import mlrose
 
 
 #
@@ -24,7 +31,7 @@ class Experiment:
     Object used to store experiment hyperparameters.
     """
     __slots__ = ["name", "algorithms", "fidelities", "n_agents", "n_simulations", "n_iterations", "n_prior_points",
-                 "prior_fidelity", "noise", "todescato_constant", "dslc_alpha", "dslc_beta", "gossip"]
+                 "prior_fidelity", "noise", "smlc_constant", "alpha", "beta", "epoch_length_0", "gossip"]
 
     def __init__(self, name):
         """
@@ -198,7 +205,7 @@ class Plotter:
 
         # levels for contour plots
         self.f_levels = np.linspace(0, constants.f_max, constants.levels)
-        self.var_levels = np.linspace(0, 0.05, constants.levels)
+        self.var_levels = np.linspace(0, constants.var_max, constants.levels)
 
     def set_lims_and_title(self, ax, title):
         """
@@ -208,10 +215,10 @@ class Plotter:
         :return: None. Modifies Axes object.
         """
         ax.set_title(title)
-        ax.set_xlim(0, 1)
-        ax.set_ylim(0, 1)
+        ax.set_xlim(-0.1, 1.1)
+        ax.set_ylim(-0.1, 1.1)
 
-    def plot(self, positions, data, partition, estimate, estimate_var, regret):
+    def plot(self, positions, data, partition, estimate, estimate_var, regret, model=None, tsps0=None, tsps=None):
         """
         Plot current simulation status
         """
@@ -233,16 +240,30 @@ class Plotter:
                                          s=str(i), fontsize=12)
         self.set_lims_and_title(self.axes["partitions"], "Partitions")
 
-
-        # plot samples
-        self.axes["samples"].text(x=0.5, y=0.5, s="Need to implement", ha="center", va="center")
+        # plot samples and tsps atop partitions
+        self.axes["samples"].scatter(x=data.x1, y=data.x2, c=partition, marker="s", s=100)
+        if model:
+            # plot points at which samples have been collected
+            X_H = model.X_H if isinstance(model, MFGP) else model.X  # hifi points to scatter
+            X_L = model.X_L if isinstance(model, MFGP) else np.empty((0, 2))  # lofi points to scatter
+            self.axes["samples"].scatter(x=X_H[:, 0], y=X_H[:, 1], c="k", marker="^", s=50)
+            self.axes["samples"].scatter(x=X_L[:, 0], y=X_L[:, 1], c="k", marker="v", s=5)
+        if tsps0 and tsps:
+            # plot tsp tours
+            for i in range(positions.shape[0]):
+                self.axes["samples"].plot(tsps0[i][:, 0], tsps0[i][:, 1], "-k")   # all tsp points
+                self.axes["samples"].scatter(x=tsps[i][:, 0], y=tsps[i][:, 1], c="m", marker="^", s=50)   # remaining tsp points
+                path = np.vstack((positions[i, :].reshape(-1, 2), tsps[i].reshape(-1, 2)))
+                self.axes["samples"].plot(path[:, 0], path[:, 1], "-m") # path between current pos and remaining tsp points
+        else:
+            # space filler for cortes algorithm
+            self.axes["samples"].text(x=0.5, y=0.5, s="N/A", ha="center")
         self.set_lims_and_title(self.axes["samples"], "Samples")
 
         # plot mean
         im = self.axes["mean"].contourf(data.x1, data.x2, estimate, levels=self.f_levels)
         plt.colorbar(im, cax=self.axes["meancbar"])
         self.set_lims_and_title(self.axes["mean"], "Posterior Mean")
-
 
         # plot var
         im = self.axes["var"].contourf(data.x1, data.x2, estimate_var, levels=self.var_levels)
@@ -334,9 +355,9 @@ def compute_partition(positions, data, prev_partition, gossip):
                     # now, determine which agent this point is closer to
                     min_dist = np.inf
                     for agent in random_edge:
-                        dx = data.x1[i, j] - positions[agent, 0]
-                        dy = data.x2[i, j] - positions[agent, 1]
-                        dist = dx ** 2 + dy ** 2
+                        dx1 = data.x1[i, j] - positions[agent, 0]
+                        dx2 = data.x2[i, j] - positions[agent, 1]
+                        dist = dx1 ** 2 + dx2 ** 2
                         if dist < min_dist:
                             assignments[i, j] = agent
 
@@ -348,9 +369,9 @@ def compute_partition(positions, data, prev_partition, gossip):
                 # find agent closest to this point and update assignment accordingly
                 min_dist = np.inf
                 for agent in range(positions.shape[0]):
-                    dx = data.x1[i, j] - positions[agent, 0]
-                    dy = data.x2[i, j] - positions[agent, 1]
-                    dist = dx ** 2 + dy ** 2
+                    dx1 = data.x1[i, j] - positions[agent, 0]
+                    dx2 = data.x2[i, j] - positions[agent, 1]
+                    dist = dx1 ** 2 + dx2 ** 2
                     if dist < min_dist:
                         min_dist = dist
                         assignments[i, j] = agent
@@ -449,6 +470,93 @@ def compute_regret(positions, data, partition):
     return regret
 
 
-def compute_todescato_explore(max_var, max_var_0):
+def compute_p_explore(max_var, max_var_0):
 
     return np.sqrt(max_var / max_var_0)
+
+
+def compute_sampling_points(model, data, threshold):
+
+    # create temporary model to query and leave original model unchanged
+    query_model = copy.deepcopy(model)      # leave original model unchanged while determining sample points
+    X_star = np.hstack((data.x1.reshape(-1, 1), data.x2.reshape(-1, 1)))
+
+    # initialize return and prediction
+    sampling_list = []
+    mu_star, cov_star, var_star = query_model.predict(X_star)
+    max_var = np.amax(var_star)
+
+    # uncertainty reduction loop
+    while max_var > threshold:
+
+        print(f"Iteration {len(sampling_list) + 1}, Max Var: {max_var}")
+
+        # find argmax of variance and save point to sampling list
+        idx = np.argmax(var_star)
+        argmax_x, argmax_mu = X_star[idx], mu_star[idx]
+        sampling_list.append(argmax_x)
+
+        # update model with estimated mu at this x and re-predict
+        model.update(argmax_x, argmax_mu)
+        mu_star, cov_star, var_star = model.predict(X_star)
+        max_var = np.amax(var_star)
+
+    # convert list into nx2 array of points to sample
+    sampling_array = np.array(sampling_list).reshape(-1, 2)
+    return sampling_array
+
+
+def compute_sampling_clusters(positions, data, partition, sampling_points):
+
+    # initialize return list to store np array of sampling points for agent i at index i
+    clusters = []
+
+    for i in range(positions.shape[0]):
+        # find points in agent i's cell
+        x1_i = data.x1[partition == i]
+        x2_i = data.x2[partition == i]
+
+        # find sampling points which are in this cell and append
+        idx_by_point = [np.logical_and(np.isclose(x1_i, sampling_points[j, 0]), np.isclose(x2_i, sampling_points[j, 1]))
+                        for j in range(sampling_points.shape[0])]
+        idx = np.logical_or.reduce(np.array(idx_by_point))      # take or across all points in cell
+        cluster_i = np.hstack((x1_i[idx].reshape(-1, 1), x2_i[idx].reshape(-1, 1)))        # put into nx2 array
+        clusters.append(cluster_i)
+
+        # for j in range(sampling_points.shape[0]):
+        #     # iterate over all sampling points and determine if this sampling point is in the partition of agent i
+        #     dx1 = x1_i - sampling_points[j, 0]
+        #     dx2 = x2_i - sampling_points[j, 1]
+        #     dist = dx1 ** 2 + dx2 ** 2
+        #
+        #     if np.isclose(dist, 0):
+        #         # assign this sampling point to agent i
+        #         cluster_i.append(sampling_points[j, :])
+        #
+        # # convert cluster_i to array and append to clusters list
+        # cluster_i_array = np.array(cluster_i)
+        # clusters.append(cluster_i_array)
+
+    return clusters
+
+
+def compute_sampling_tsps(sampling_clusters):
+
+    # initialize return list of np arrays of ordered sampling points by agent
+    tours = []
+
+    for cluster in sampling_clusters:
+
+        # compute TSP tour using MLRose
+        tour = np.empty((0, 2))
+        if cluster.shape[0] > 0:                            # we have nontrivial set of points to sample
+            coordinates = [tuple(x) for x in cluster]       # MLRose takes list of tuples, not ndarray
+            problem = mlrose.TSPOpt(length=len(coordinates), coords=coordinates, maximize=False)
+            solution, fitness = mlrose.genetic_alg(problem,
+                                                   mutation_prob=constants.tsp_mutation,
+                                                   max_attempts=constants.tsp_max_attempts,
+                                                   random_state=constants.seed)
+            tour = cluster[solution]    # solution is list of ordered indices
+        tours.append(tour)
+
+    return tours

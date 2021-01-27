@@ -91,8 +91,8 @@ def visualize_fit_hyp(name):
     # get predictions at random set of points
     X_star = X
     x1_star, x2_star = x1, x2
-    sf_mu, sf_var = sfgp.predict(X_star)
-    mf_mu, mf_var = mfgp.predict(X_star)
+    sf_mu, sf_cov, sf_var = sfgp.predict(X_star)
+    mf_mu, mf_cov, mf_var = mfgp.predict(X_star)
 
     # configure plot
     fig = plt.figure(figsize=(12, 16))
@@ -104,11 +104,11 @@ def visualize_fit_hyp(name):
     ax_sf_var = fig.add_subplot(spec[2, 1])
     ax_mf_mu = fig.add_subplot(spec[3, 0])
     ax_mf_var = fig.add_subplot(spec[3, 1])
-    f_levels = np.linspace(0, 1, constants.levels)
-    var_levels = np.linspace(0, 0.05, constants.levels)
+    f_levels = np.linspace(0, constants.f_max, constants.levels)
+    var_levels = np.linspace(0, constants.var_max, constants.levels)
 
     # plot ground truth
-    ax_text.text(x=0.5, y=0.5, s="Forrester 2007: GP Predictions", ha="center", va="center", fontsize=24)
+    ax_text.text(x=0.5, y=0.5, s=f"{name}: GP Predictions", ha="center", va="center", fontsize=24)
     ax_text.axis("off")
     im = ax_high.contourf(x1, x2, f_high, levels=f_levels)
     plt.colorbar(im, ax=ax_high)
@@ -120,26 +120,33 @@ def visualize_fit_hyp(name):
     # plot SFGP
     im = ax_sf_mu.contourf(x1_star, x2_star, sf_mu.reshape(x1_star.shape), levels=f_levels)
     plt.colorbar(im, ax=ax_sf_mu)
-    im = ax_sf_var.contourf(x1_star, x2_star, np.diag(sf_var).reshape(x1_star.shape), levels=var_levels)
+    im = ax_sf_var.contourf(x1_star, x2_star, sf_var.reshape(x1_star.shape), levels=var_levels)
     plt.colorbar(im, ax=ax_sf_var)
+    ax_sf_mu.scatter(x=sfgp.X[:, 0], y=sfgp.X[:, 1], c="k", marker="^", s=50)
+    ax_sf_var.scatter(x=sfgp.X[:, 0], y=sfgp.X[:, 1], c="k", marker="^", s=50)
     ax_sf_mu.set_title("SFGP Mean")
     ax_sf_var.set_title("SFGP Variance")
 
     # plot MFGP
     im = ax_mf_mu.contourf(x1_star, x2_star, mf_mu.reshape(x1_star.shape), levels=f_levels)
     plt.colorbar(im, ax=ax_mf_mu)
-    im = ax_mf_var.contourf(x1_star, x2_star, np.diag(mf_var).reshape(x1_star.shape), levels=var_levels)
+    im = ax_mf_var.contourf(x1_star, x2_star, mf_var.reshape(x1_star.shape), levels=var_levels)
     plt.colorbar(im, ax=ax_mf_var)
+    ax_mf_mu.scatter(x=mfgp.X_H[:, 0], y=mfgp.X_H[:, 1], c="k", marker="^", s=50)
+    ax_mf_mu.scatter(x=mfgp.X_L[:, 0], y=mfgp.X_L[:, 1], c="k", marker="v", s=5)
+    ax_mf_var.scatter(x=mfgp.X_H[:, 0], y=mfgp.X_H[:, 1], c="k", marker="^", s=50)
+    ax_mf_var.scatter(x=mfgp.X_L[:, 0], y=mfgp.X_L[:, 1], c="k", marker="v", s=5)
     ax_mf_mu.set_title("MFGP Mean")
     ax_mf_var.set_title("MFGP Variance")
 
     # save & show plots
+    print(np.amax(mf_var), np.amax(sf_var))
     fig.tight_layout()
     plt.savefig(f"../images/{name}_gp.png")
     plt.show()
 
 
-def forrester2007(name, invert=False):
+def generate_data(name, function, invert=False):
     """
     Generate 2D realization of function from Forrester 2007 "Multi-fidelity optimization via surrogate modeling"
     specified on page 3256. This function is defined in one dimension; we generalize it to 2 dimensions by
@@ -156,9 +163,23 @@ def forrester2007(name, invert=False):
     x1, x2 = np.meshgrid(x, y, indexing="ij")
 
     # generate data
-    f_high = ((6 * x1)**2 * np.sin(12 * x1 - 4)) + ((6 * x2)**2 * np.sin(12 * x2 - 4))
-    a, b, c = 0.5, 10, -5
-    f_low = (a * f_high + b * (x1 - 0.5) - c) + (a * f_high + b * (x2 - 0.5) - c)
+    if function == "forrester2007":
+        f_high = ((6 * x1)**2 * np.sin(12 * x1 - 4)) + ((6 * x2)**2 * np.sin(12 * x2 - 4))
+        a, b, c = 0.5, 10, -5
+        f_low = (a * f_high + b * (x1 - 0.5) - c) + (a * f_high + b * (x2 - 0.5) - c)
+    elif function == "corners":
+        f_high, f_low = np.zeros(shape=x1.shape), np.zeros(shape=x1.shape)
+        centers = np.array([[0.1, 0.1], [0.9, 0.9]])
+        ell = [0.05, 0.2]
+        for i in range(centers.shape[0]):
+            f_high += 10 * np.exp(
+                -((x1 - centers[i, 0])**2 + (x2 - centers[i, 1])**2) / (2 * ell[0])
+            )
+            f_low += 5 * np.exp(
+                -((x1 - centers[i, 0])**2 + (x2 - centers[i, 1])**2) / (2 * ell[1])
+            )
+    else:
+        raise ValueError("Unrecognized data generating function.")
 
     if invert:
         # invert data since the goal is maximization
@@ -181,7 +202,7 @@ def forrester2007(name, invert=False):
 
 
     # plot data
-    ax_text.text(x=0.5, y=0.5, s="Forrester 2007", ha="center", va="center", fontsize=24)
+    ax_text.text(x=0.5, y=0.5, s=name, ha="center", va="center", fontsize=24)
     ax_text.axis("off")
     im = ax_high.contourf(x1, x2, f_high, levels=f_levels)
     im = ax_low.contourf(x1, x2, f_low, levels=f_levels)
@@ -202,5 +223,7 @@ def forrester2007(name, invert=False):
 
 
 if __name__ == "__main__":
-    name = "forrester2007"
-    forrester2007(name)
+    name = "corners"
+    # generate_data(name, function="corners")
+    fit_hyp(name)
+    visualize_fit_hyp(name)

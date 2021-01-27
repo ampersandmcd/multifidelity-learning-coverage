@@ -4,12 +4,12 @@ driver.py
 Experimental engine to run learning+coverage algorithms.
 """
 
-from algorithms import cortes, todescato, dslc
+from algorithms import cortes, stochastic_multifidelity_learning_coverage, deterministic_multifidelity_learning_coverage
 from utils import Experiment, Data, Logger, Plotter
 
 if __name__ == "__main__":
 
-    name = "forrester2007"
+    name = "corners"
     experiment = Experiment(name)
     data = Data(name)
     log = Logger(name)
@@ -22,10 +22,10 @@ if __name__ == "__main__":
         else:
             for fidelity in experiment.fidelities:
                 for sim in range(experiment.n_simulations):
-                    if algorithm == "todescato":
-                        todescato(experiment, data, log, plotter, fidelity, sim)
-                    elif algorithm == "dslc":
-                        dslc(experiment, data, log, plotter, fidelity, sim)
+                    if algorithm == "smlc":
+                        stochastic_multifidelity_learning_coverage(experiment, data, log, plotter, fidelity, sim)
+                    elif algorithm == "dmlc":
+                        deterministic_multifidelity_learning_coverage(experiment, data, log, plotter, fidelity, sim)
                     else:
                         raise ValueError("Unknown algorithm type specified in config file.")
 
