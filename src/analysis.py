@@ -9,7 +9,8 @@ import matplotlib.pyplot as plt
 
 import constants
 
-def plot_loss(df):
+
+def plot_loss(df, filename):
 
     # collapse data by algorithm, fidelity and iteration number and take mean
     mean_df = df.groupby(by=["name", "fidelity", "iteration"]).mean().reset_index()
@@ -40,10 +41,11 @@ def plot_loss(df):
 
     fig.tight_layout()
     fig.subplots_adjust(wspace=1)
+    fig.savefig(f"{filename}_loss.png")
     plt.show()
 
 
-def plot_cumulative_loss(df):
+def plot_cumulative_loss(df, filename):
 
     # collapse data by algorithm, fidelity and iteration number and take mean
     mean_df = df.groupby(by=["name", "fidelity", "iteration"]).mean().reset_index()
@@ -78,10 +80,11 @@ def plot_cumulative_loss(df):
 
     fig.tight_layout()
     fig.subplots_adjust(wspace=1)
+    fig.savefig(f"{filename}_cumulative_loss.png")
     plt.show()
 
 
-def plot_var(df):
+def plot_var(df, filename):
 
     # collapse data by algorithm, fidelity and iteration number and take mean of max_var
     mean_df = df.groupby(by=["name", "fidelity", "iteration"]).mean().reset_index()
@@ -112,10 +115,11 @@ def plot_var(df):
 
     fig.tight_layout()
     fig.subplots_adjust(wspace=1)
+    fig.savefig(f"{filename}_variance.png")
     plt.show()
 
 
-def plot_distance(df):
+def plot_distance(df, filename):
 
     # collapse data by algorithm, fidelity and iteration number and take mean of distance travelled
     mean_df = df.groupby(by=["name", "fidelity", "iteration"]).mean().reset_index()
@@ -146,16 +150,21 @@ def plot_distance(df):
 
     fig.tight_layout()
     fig.subplots_adjust(wspace=1)
+    fig.savefig(f"{filename}_distance.png")
     plt.show()
 
 
 if __name__ == "__main__":
 
-    filename = "../logs/bump_01_27_2021_21_49_08.csv"
-    df = pd.read_csv(filename, header="infer", index_col=0)
+    name = "bump_01_28_2021_00_50_50"
+    csv_filename, img_basename = f"../logs/{name}.csv", f"../plots/{name}"
+
+    df = pd.read_csv(csv_filename, header="infer", index_col=0)
     df["fidelity"] = df["fidelity"].fillna("na")        # interpret na fidelity level as string to keep data
-    # plot_loss(df)
-    plot_cumulative_loss(df)
-    # plot_var(df)
-    # plot_distance(df)
+
+    plot_loss(df, img_basename)
+    plot_cumulative_loss(df, img_basename)
+    plot_var(df, img_basename)
+    plot_distance(df, img_basename)
+
     print()
