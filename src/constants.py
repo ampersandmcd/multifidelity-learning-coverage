@@ -10,8 +10,8 @@ levels = 10
 # grid spacing
 dx = 0.05
 
-# numerical padding to avoid div by zero errors
-div_by_zero_epsilon = 0.01
+# numerical padding to avoid div by zero and other computational errors
+epsilon = 0.01
 
 # sampling noise of observations
 sampling_noise = 1
@@ -30,3 +30,6 @@ tsp_mutation = 0.2
 
 # tsp genetic algorithm number of attempts
 tsp_max_attempts = 10
+
+# analysis figsize
+analysis_figsize = (6, 6)

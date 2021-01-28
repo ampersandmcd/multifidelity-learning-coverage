@@ -12,13 +12,12 @@ import constants
 
 def cortes(experiment, data, logger, plotter, fidelity, sim):
 
-    # init random number generator
+    # init random number generator and reset plots
     rng = np.random.default_rng()
+    plotter.reset()
 
     # initialize random starting positions and snap to nearest discretized point
-    positions = rng.random((experiment.n_agents, 2))      # agent i position is in row i with [x, y]
-    multiplier = np.round(1 / constants.dx, decimals=4)
-    positions = np.round(positions * multiplier) / multiplier
+    positions = utils.initialize_positions(experiment, rng)
     prev_positions = np.copy(positions)                   # save copy to compute distance travelled
 
     # initialize partition and true centroids
@@ -39,11 +38,13 @@ def cortes(experiment, data, logger, plotter, fidelity, sim):
         distance = utils.compute_distance(positions, prev_positions)
         loss = utils.compute_loss(positions, data, partition)
         regret = utils.compute_regret(positions, data, partition)
+        print(f"Iteration: {iteration}, Loss: {loss}") if iteration % 10 == 0 else None
 
         # log and plot progress
         logger.log("cortes", sim, iteration, fidelity, positions, centroids,
                    max_var, argmax_var, p_explore, explore, distance, loss, regret)
-        plotter.plot(positions, data, partition, estimate=data.f_high, estimate_var=np.zeros(data.x1.shape), regret=regret)
+        plotter.plot(positions, data, partition, estimate=data.f_high, estimate_var=np.zeros(data.x1.shape),
+                     regret=regret, loss=loss)
 
         # update partition and centroids given perfect knowledge
         partition = utils.compute_partition(centroids, data, partition, experiment.gossip)
@@ -56,8 +57,9 @@ def cortes(experiment, data, logger, plotter, fidelity, sim):
 
 def stochastic_multifidelity_learning_coverage(experiment, data, logger, plotter, fidelity, sim):
 
-    # init random number generator
+    # init random number generator and reset plots
     rng = np.random.default_rng()
+    plotter.reset()
 
     # initialize GP model using low-fidelity training data
     model = utils.initialize_gp(experiment, data, fidelity, rng)
@@ -65,9 +67,7 @@ def stochastic_multifidelity_learning_coverage(experiment, data, logger, plotter
     mu_star, cov_star, var_star = model.predict(X_star)
 
     # initialize random starting positions and snap to nearest discretized point
-    positions = rng.random((experiment.n_agents, 2))      # agent i position is in row i with [x, y]
-    multiplier = np.round(1 / constants.dx, decimals=4)
-    positions = np.round(positions * multiplier) / multiplier
+    positions = utils.initialize_positions(experiment, rng)
     prev_positions = np.copy(positions)                   # save copy to compute distance travelled
 
     # initialize partition and estimated centroids
@@ -100,12 +100,13 @@ def stochastic_multifidelity_learning_coverage(experiment, data, logger, plotter
         distance = utils.compute_distance(positions, prev_positions)
         loss = utils.compute_loss(positions, data, partition)
         regret = utils.compute_regret(positions, data, partition)
+        print(f"Iteration: {iteration}, Loss: {loss}") if iteration % 10 == 0 else None
 
         # log and plot progress
         logger.log("smlc", sim, iteration, fidelity, positions, centroids,
                    max_var, argmax_var, p_explore, explore, distance, loss, regret)
         plotter.plot(positions, data, partition, estimate=mu_star.reshape(data.x1.shape),
-                     estimate_var=var_star.reshape(data.x1.shape), regret=regret, model=model)
+                     estimate_var=var_star.reshape(data.x1.shape), regret=regret, loss=loss, model=model)
 
         # update partition and centroids based on estimate and previous centroids
         partition = utils.compute_partition(centroids, data, partition, experiment.gossip)
@@ -129,8 +130,9 @@ def stochastic_multifidelity_learning_coverage(experiment, data, logger, plotter
 
 def deterministic_multifidelity_learning_coverage(experiment, data, logger, plotter, fidelity, sim):
 
-    # init random number generator
+    # init random number generator and reset plots
     rng = np.random.default_rng()
+    plotter.reset()
 
     # initialize GP model using low-fidelity training data
     model = utils.initialize_gp(experiment, data, fidelity, rng)
@@ -138,9 +140,7 @@ def deterministic_multifidelity_learning_coverage(experiment, data, logger, plot
     mu_star, cov_star, var_star = model.predict(X_star)
 
     # initialize random starting positions and snap to nearest discretized point
-    positions = rng.random((experiment.n_agents, 2))      # agent i position is in row i with [x, y]
-    multiplier = np.round(1 / constants.dx, decimals=4)
-    positions = np.round(positions * multiplier) / multiplier
+    positions = utils.initialize_positions(experiment, rng)
     prev_positions = np.copy(positions)                   # save copy to compute distance travelled
 
     # initialize partition and estimated centroids
@@ -154,12 +154,11 @@ def deterministic_multifidelity_learning_coverage(experiment, data, logger, plot
     # initialize iteration, epoch counter
     iteration, epoch = 0, 0
 
-    while iteration < experiment.n_iterations:
+    while iteration < experiment.n_iterations:      # add 1 when comparing since we count from 0
 
-        # increment epoch, compute threshold below which to reduce posterior variance, update epoch length
-        epoch += 1
-        threshold = (experiment.alpha ** epoch) * max_var_0
-        epoch_length = int(np.round((experiment.beta ** epoch) * experiment.epoch_length_0))
+        # compute threshold below which to reduce posterior variance, update epoch length
+        threshold = (experiment.alpha ** (epoch + 1)) * max_var_0       # need to reduce one epoch ahead
+        epoch_length = int((experiment.beta ** epoch) * experiment.epoch_length_0 + constants.epsilon)
 
         # compute sampling points, clusters and TSP tours to reduce posterior variance
         sampling_points = utils.compute_sampling_points(model, data, threshold)
@@ -196,12 +195,13 @@ def deterministic_multifidelity_learning_coverage(experiment, data, logger, plot
             distance = utils.compute_distance(positions, prev_positions)
             loss = utils.compute_loss(positions, data, partition)
             regret = utils.compute_regret(positions, data, partition)
+            print(f"Iteration: {iteration}, Loss: {loss}") if iteration % 10 == 0 else None
 
             # log and plot progress
             logger.log("dmlc", sim, iteration, fidelity, positions, centroids,
                        max_var, argmax_var, p_explore, explore, distance, loss, regret)
             plotter.plot(positions, data, partition, estimate=mu_star.reshape(data.x1.shape),
-                         estimate_var=var_star.reshape(data.x1.shape), regret=regret, model=model,
+                         estimate_var=var_star.reshape(data.x1.shape), regret=regret, loss=loss, model=model,
                          tsps0=sampling_tsps_0, tsps=sampling_tsps)
 
             # update partition if and only if all agents are on coverage phase

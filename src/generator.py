@@ -178,6 +178,16 @@ def generate_data(name, function, invert=False):
             f_low += 5 * np.exp(
                 -((x1 - centers[i, 0])**2 + (x2 - centers[i, 1])**2) / (2 * ell[1])
             )
+    elif function == "bump":
+        f_high, f_low = np.zeros(shape=x1.shape), np.zeros(shape=x1.shape)
+        center_high, center_low = [0.75, 0.75], [0.5, 0.5]
+        ell = [0.05, 0.2]
+        f_high += 10 * np.exp(
+            -((x1 - center_high[0])**2 + (x2 - center_high[1])**2) / (2 * ell[0])
+        )
+        f_low += 5 * np.exp(
+            -((x1 - center_low[0])**2 + (x2 - center_low[1])**2) / (2 * ell[1])
+        )
     else:
         raise ValueError("Unrecognized data generating function.")
 
@@ -188,8 +198,8 @@ def generate_data(name, function, invert=False):
     # normalize data
     overall_min = min(np.amin(f_high), np.amin(f_low))
     overall_max = max(np.amax(f_high), np.amax(f_low))
-    f_high = constants.f_max * (f_high - overall_min) / (overall_max - overall_min) + constants.div_by_zero_epsilon
-    f_low = constants.f_max * (f_low - overall_min) / (overall_max - overall_min) + constants.div_by_zero_epsilon
+    f_high = constants.f_max * (f_high - overall_min) / (overall_max - overall_min) + constants.epsilon
+    f_low = constants.f_max * (f_low - overall_min) / (overall_max - overall_min) + constants.epsilon
 
     # configure plot
     fig = plt.figure(figsize=(12, 6))
@@ -223,7 +233,7 @@ def generate_data(name, function, invert=False):
 
 
 if __name__ == "__main__":
-    name = "corners"
-    # generate_data(name, function="corners")
+    name = "bump"
+    # generate_data(name, function=name)
     fit_hyp(name)
     visualize_fit_hyp(name)

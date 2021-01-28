@@ -6,6 +6,7 @@ Helper classes and functions for implementation of multifidelity learning+covera
 
 import copy
 import sys
+from datetime import datetime
 
 import numpy as np
 import pandas as pd
@@ -31,7 +32,7 @@ class Experiment:
     Object used to store experiment hyperparameters.
     """
     __slots__ = ["name", "algorithms", "fidelities", "n_agents", "n_simulations", "n_iterations", "n_prior_points",
-                 "prior_fidelity", "noise", "smlc_constant", "alpha", "beta", "epoch_length_0", "gossip"]
+                 "prior_fidelity", "noise", "alpha", "beta", "epoch_length_0", "gossip"]
 
     def __init__(self, name):
         """
@@ -47,14 +48,15 @@ class Experiment:
         for key in kwargs:
             setattr(self, key, kwargs[key])
 
-    def save(self, name):
+    def save(self):
         """
         Saves experiment hyperparameters to a config file
 
         :param name: Name of experiment.
         """
-        filename = f"../data/{name}.config"
-        d = {key: value for key, value in dir(self) if not key.startswith("__")}
+        t = datetime.now().strftime("%m_%d_%Y_%H_%M_%S")
+        filename = f"../logs/{self.name}_{t}.config"
+        d = {key: getattr(self, key) for key in dir(self) if not key.startswith("__")}
         with open(filename, mode="w") as file:
             file.write(str(d))
 
@@ -128,15 +130,16 @@ class Logger:
 
         :return: None. Saves data to CSV.
         """
+        t = datetime.now().strftime("%m_%d_%Y_%H_%M_%S")
         df = pd.DataFrame(self.results)
-        df.to_csv(f"../logs/{self.name}.csv")
+        df.to_csv(f"../logs/{self.name}_{t}.csv")
 
 
 class Plotter:
     """
     Object used to visualize algorithm progression.
     """
-    __slots__ = ["name", "fig", "spec", "axes", "regret", "f_levels", "var_levels", "active"]
+    __slots__ = ["name", "fig", "spec", "axes", "regret", "loss", "f_levels", "var_levels", "active"]
 
     def __init__(self, name):
         """
@@ -145,7 +148,7 @@ class Plotter:
         :param name: Name of experiment.
         """
         # optional setting to disable plotter
-        self.active = True
+        self.active = False
 
         # short-circuit if disabled
         if not self.active:
@@ -153,7 +156,7 @@ class Plotter:
 
         # configure plotter
         self.name = name
-        self.regret = []
+        self.regret, self.loss = [], []
         self.fig = plt.figure(num=0, figsize=(16, 9), dpi=120, facecolor='w')
         self.fig.subplots_adjust(wspace=0.5, hspace=0.5)
         self.spec = gridspec.GridSpec(ncols=4, nrows=3, figure=self.fig,
@@ -185,8 +188,9 @@ class Plotter:
         self.fig.add_axes(cax)
         self.axes["varcbar"] = cax
 
-        self.axes["regret"] = ax = self.fig.add_subplot(self.spec[2, 0:2])
-        ax.set_title("Cumulative Regret")
+        self.axes["loss"] = ax = self.fig.add_subplot(self.spec[2, 0:2])
+        ax.ticklabel_format(axis="y", style="sci", scilimits=(-3, -3))
+        ax.set_title("Loss")
 
         self.axes["lofi"] = ax = self.fig.add_subplot(self.spec[2, 3])
         self.set_lims_and_title(ax, "Low Fidelity Truth")
@@ -218,7 +222,7 @@ class Plotter:
         ax.set_xlim(-0.1, 1.1)
         ax.set_ylim(-0.1, 1.1)
 
-    def plot(self, positions, data, partition, estimate, estimate_var, regret, model=None, tsps0=None, tsps=None):
+    def plot(self, positions, data, partition, estimate, estimate_var, loss, regret, model=None, tsps0=None, tsps=None):
         """
         Plot current simulation status
         """
@@ -255,9 +259,6 @@ class Plotter:
                 self.axes["samples"].scatter(x=tsps[i][:, 0], y=tsps[i][:, 1], c="m", marker="^", s=50)   # remaining tsp points
                 path = np.vstack((positions[i, :].reshape(-1, 2), tsps[i].reshape(-1, 2)))
                 self.axes["samples"].plot(path[:, 0], path[:, 1], "-m") # path between current pos and remaining tsp points
-        else:
-            # space filler for cortes algorithm
-            self.axes["samples"].text(x=0.5, y=0.5, s="N/A", ha="center")
         self.set_lims_and_title(self.axes["samples"], "Samples")
 
         # plot mean
@@ -280,28 +281,70 @@ class Plotter:
         plt.colorbar(im, cax=self.axes["hificbar"])
         self.set_lims_and_title(self.axes["hifi"], "High Fidelity Truth")
 
-        # plot regret
-        self.regret.append(regret)
-        self.axes["regret"].plot([i for i in range(len(self.regret))], self.regret, 'ko-')
-        self.axes["regret"].ticklabel_format(axis="y", style="sci", scilimits=(-3, -3))
-        self.axes["regret"].set_title("Cumulative Regret")
+        # plot loss
+        self.loss.append(loss)
+        self.axes["loss"].plot([i for i in range(len(self.loss))], self.loss, 'ko-')
+        self.axes["loss"].ticklabel_format(axis="y", style="sci", scilimits=(-3, -3))
+        self.axes["loss"].set_title("Loss")
 
         # show figure
         self.fig.show()
+
+    def reset(self):
+        """
+        Reset plotter for new algorithm
+        """
+        # short-circuit if disabled
+        if not self.active:
+            return
+
+        self.regret, self.loss = [], []
+        self.axes["loss"].cla()
+        self.axes["loss"].ticklabel_format(axis="y", style="sci", scilimits=(-3, -3))
+        self.axes["loss"].set_title("Loss")
+
 
 #
 # Begin function definitions.
 #
 
 
+def initialize_positions(experiment, rng):
+
+    # initialize array of positions
+    positions = np.zeros((experiment.n_agents, 2))  # agent i position is in row i with [x, y]
+    diffs = np.expand_dims(positions, 1) - np.expand_dims(positions, 0)
+    distances = np.sum(diffs ** 2, axis=2)          # n_agents x n_agents distance matrix
+
+    # generate random positions but ensure no two agents get assigned to same discretized point
+    while np.amin(distances) < constants.dx / 2:    # there are two points on top of one another in discrete space
+        positions = rng.random((experiment.n_agents, 2))
+        multiplier = np.round(1 / constants.dx, decimals=4)
+        positions = np.round(positions * multiplier) / multiplier
+        diffs = np.expand_dims(positions, 1) - np.expand_dims(positions, 0)
+        distances = np.sum(diffs ** 2, axis=2) + np.eye(experiment.n_agents)
+        # add ones to diagonal since distance from agent to self is always 0
+
+    print(f"Initial positions: {positions}")
+    return positions
+
 def initialize_gp(experiment, data, fidelity, rng):
 
     # select low-fidelity training data with n_prior_points
     X = np.hstack((data.x1.reshape(-1, 1), data.x2.reshape(-1, 1)))
     y_low = data.f_low.reshape(-1, 1)
-    idx = np.arange(X.shape[0])
-    train_idx = rng.choice(idx, size=experiment.n_prior_points, replace=False)
-    X_train, y_low_train = X[train_idx, :], y_low[train_idx, :]
+
+    # random choice of low-fidelity data
+    # idx = np.arange(X.shape[0])
+    # train_idx = rng.choice(idx, size=experiment.n_prior_points, replace=False)  # random choice
+    # X_train, y_low_train = X[train_idx, :], y_low[train_idx, :]
+
+    # deterministic choice of low-fidelity data on interval-spaced grid of points
+    n_points_1d = int(np.sqrt(experiment.n_prior_points) + constants.epsilon)
+    interval = int(np.ceil(data.x1.shape[0] / n_points_1d))
+    x1_train, x2_train = data.x1[::interval, ::interval].reshape(-1, 1), data.x2[::interval, ::interval].reshape(-1, 1)
+    X_train = np.hstack((x1_train.reshape(-1, 1), x2_train.reshape(-1, 1)))
+    y_low_train = data.f_low[::interval, ::interval].reshape(-1, 1)
 
     # compute means for unit prior information
     X_mean, y_low_mean = np.mean(X_train, axis=0).reshape(1, 2), np.mean(y_low_train).reshape(1, 1)
@@ -434,7 +477,6 @@ def compute_distance(positions, prev_positions):
 def compute_loss(positions, data, partition):
 
     loss = 0
-    true_centroids = compute_centroids(positions, data, partition, estimate=data.f_high)
     for i in range(positions.shape[0]):
         # find points in agent i's cell
         x1_i = data.x1[partition == i]
@@ -442,8 +484,7 @@ def compute_loss(positions, data, partition):
         f_i = data.f_high[partition == i]
 
         # compute weighted squared-distance loss to each point
-        centroid = true_centroids[i, :]
-        sq_dists = (x1_i - centroid[0]) ** 2 + (x2_i - centroid[1]) ** 2
+        sq_dists = (x1_i - positions[i, 0]) ** 2 + (x2_i - positions[i, 1]) ** 2
         weighted_sq_dists = f_i * sq_dists
         area_i = len(x1_i) * (constants.dx ** 2)
         loss_i = np.mean(weighted_sq_dists) * area_i
@@ -472,7 +513,7 @@ def compute_regret(positions, data, partition):
 
 def compute_p_explore(max_var, max_var_0):
 
-    return np.sqrt(max_var / max_var_0)
+    return max_var / max_var_0
 
 
 def compute_sampling_points(model, data, threshold):
@@ -489,7 +530,7 @@ def compute_sampling_points(model, data, threshold):
     # uncertainty reduction loop
     while max_var > threshold:
 
-        print(f"Iteration {len(sampling_list) + 1}, Max Var: {max_var}")
+        print(f"Sample {len(sampling_list) + 1}, Max Var: {max_var}")
 
         # find argmax of variance and save point to sampling list
         idx = np.argmax(var_star)
