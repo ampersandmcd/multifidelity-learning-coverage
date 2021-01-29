@@ -95,7 +95,8 @@ class Logger:
         self.name = name
         self.results = []
 
-    def log(self, name, sim, iteration, fidelity, positions, centroids, max_var, argmax_var, p_explore, explore, distance, loss, regret):
+    def log(self, name, sim, iteration, fidelity, positions, centroids, max_var, argmax_var,
+            p_explore, explore, distance, loss, regret, mse):
         """
         Add an experimental result to the list of results.
         List of results stores dictionaries and will ultimately be converted to a DataFrame.
@@ -120,7 +121,8 @@ class Logger:
                 "explore": explore[agent],
                 "distance": distance[agent],
                 "loss": loss,
-                "regret": regret
+                "regret": regret,
+                "mse": mse
             }
             self.results.append(info)
 
@@ -509,6 +511,11 @@ def compute_regret(positions, data, partition):
     # compute regret following definition 2 in DSLC paper https://arxiv.org/abs/2101.04306
     regret = 2 * loss - position_loss - partition_loss
     return regret
+
+
+def compute_mse(data, estimate):
+
+    return np.mean((data.f_high - estimate)**2)
 
 
 def compute_p_explore(max_var, max_var_0):

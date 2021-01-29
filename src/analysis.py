@@ -154,9 +154,44 @@ def plot_distance(df, filename):
     plt.show()
 
 
+def plot_mse(df, filename):
+
+    # collapse data by algorithm, fidelity and iteration number and take mean of distance travelled
+    mean_df = df.groupby(by=["name", "fidelity", "iteration"]).mean().reset_index()
+    mean_df["algorithm"] = mean_df["name"] + "_" + mean_df["fidelity"]
+    mean_df = mean_df[["algorithm", "iteration", "mse"]]
+    mean_pivot = mean_df.pivot(index="iteration", columns="algorithm", values="mse")
+
+    # subset data by smlc and dmlc
+    smlc = mean_pivot[[col for col in mean_pivot.columns if "smlc" in col or "cortes" in col]]
+    dmlc = mean_pivot[[col for col in mean_pivot.columns if "dmlc" in col or "cortes" in col]]
+
+    # reorganize to put cortes column at end
+    smlc = smlc[[col for col in smlc.columns if "cortes" not in col] + ["cortes_na"]]
+    dmlc = dmlc[[col for col in dmlc.columns if "cortes" not in col] + ["cortes_na"]]
+
+    # plot mean mse
+    fig, axs = plt.subplots(2, 1, figsize=constants.analysis_figsize)
+
+    smlc.plot(ax=axs[0])
+    axs[0].set_title("SMLC: MSE of Sensory Function by Iteration")
+    axs[0].set_ylabel("MSE")
+    axs[0].set_xlabel("Iteration")
+
+    dmlc.plot(ax=axs[1])
+    axs[1].set_title("DMLC: MSE of Sensory Function by Iteration")
+    axs[1].set_ylabel("MSE")
+    axs[1].set_xlabel("Iteration")
+
+    fig.tight_layout()
+    fig.subplots_adjust(wspace=1)
+    fig.savefig(f"{filename}_mse.png")
+    plt.show()
+
+
 if __name__ == "__main__":
 
-    name = "bump_01_28_2021_00_50_50"
+    name = "bump_01_28_2021_23_49_40"
     csv_filename, img_basename = f"../logs/{name}.csv", f"../plots/{name}"
 
     df = pd.read_csv(csv_filename, header="infer", index_col=0)
@@ -166,5 +201,6 @@ if __name__ == "__main__":
     plot_cumulative_loss(df, img_basename)
     plot_var(df, img_basename)
     plot_distance(df, img_basename)
+    plot_mse(df, img_basename)
 
     print()

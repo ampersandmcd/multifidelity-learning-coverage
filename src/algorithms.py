@@ -38,11 +38,13 @@ def cortes(experiment, data, logger, plotter, fidelity, sim):
         distance = utils.compute_distance(positions, prev_positions)
         loss = utils.compute_loss(positions, data, partition)
         regret = utils.compute_regret(positions, data, partition)
-        print(f"Iteration: {iteration}, Loss: {loss}") if iteration % 10 == 0 else None
+        mse = utils.compute_mse(data, estimate=data.f_high)
+        if iteration % constants.echo_frequency == 0:
+            print(f"Iteration: {iteration},\tLoss: {loss},\tVar: {max_var},\tMSE: {mse}")
 
         # log and plot progress
         logger.log("cortes", sim, iteration, fidelity, positions, centroids,
-                   max_var, argmax_var, p_explore, explore, distance, loss, regret)
+                   max_var, argmax_var, p_explore, explore, distance, loss, regret, mse)
         plotter.plot(positions, data, partition, estimate=data.f_high, estimate_var=np.zeros(data.x1.shape),
                      regret=regret, loss=loss)
 
@@ -100,11 +102,13 @@ def stochastic_multifidelity_learning_coverage(experiment, data, logger, plotter
         distance = utils.compute_distance(positions, prev_positions)
         loss = utils.compute_loss(positions, data, partition)
         regret = utils.compute_regret(positions, data, partition)
-        print(f"Iteration: {iteration}, Loss: {loss}") if iteration % 10 == 0 else None
+        mse = utils.compute_mse(data, estimate=mu_star.reshape(data.x1.shape))
+        if iteration % constants.echo_frequency == 0:
+            print(f"Iteration: {iteration},\tLoss: {loss},\tVar: {max_var},\tMSE: {mse}")
 
         # log and plot progress
         logger.log("smlc", sim, iteration, fidelity, positions, centroids,
-                   max_var, argmax_var, p_explore, explore, distance, loss, regret)
+                   max_var, argmax_var, p_explore, explore, distance, loss, regret, mse)
         plotter.plot(positions, data, partition, estimate=mu_star.reshape(data.x1.shape),
                      estimate_var=var_star.reshape(data.x1.shape), regret=regret, loss=loss, model=model)
 
@@ -195,11 +199,13 @@ def deterministic_multifidelity_learning_coverage(experiment, data, logger, plot
             distance = utils.compute_distance(positions, prev_positions)
             loss = utils.compute_loss(positions, data, partition)
             regret = utils.compute_regret(positions, data, partition)
-            print(f"Iteration: {iteration}, Loss: {loss}") if iteration % 10 == 0 else None
+            mse = utils.compute_mse(data, estimate=mu_star.reshape(data.x1.shape))
+            if iteration % constants.echo_frequency == 0:
+                print(f"Iteration: {iteration},\tLoss: {loss},\tVar: {max_var},\tMSE: {mse}")
 
             # log and plot progress
             logger.log("dmlc", sim, iteration, fidelity, positions, centroids,
-                       max_var, argmax_var, p_explore, explore, distance, loss, regret)
+                       max_var, argmax_var, p_explore, explore, distance, loss, regret, mse)
             plotter.plot(positions, data, partition, estimate=mu_star.reshape(data.x1.shape),
                          estimate_var=var_star.reshape(data.x1.shape), regret=regret, loss=loss, model=model,
                          tsps0=sampling_tsps_0, tsps=sampling_tsps)

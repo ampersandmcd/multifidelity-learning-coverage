@@ -31,5 +31,8 @@ tsp_mutation = 0.2
 # tsp genetic algorithm number of attempts
 tsp_max_attempts = 10
 
+# echo frequency (iterations) in console
+echo_frequency = 10
+
 # analysis figsize
 analysis_figsize = (6, 6)
