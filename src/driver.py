@@ -16,6 +16,7 @@ if __name__ == "__main__":
     data = Data(name)
     log = Logger(name)
     plotter = Plotter(name)
+    print(f"Initialized simulation with {name}.config")
 
     for algorithm in experiment.algorithms:
         if algorithm == "cortes":

@@ -7,6 +7,7 @@ Helper classes and functions for implementation of multifidelity learning+covera
 import copy
 import sys
 from datetime import datetime
+import os
 
 import numpy as np
 import pandas as pd
@@ -47,6 +48,9 @@ class Experiment:
 
         for key in kwargs:
             setattr(self, key, kwargs[key])
+
+        if not os.path.isdir("../logs"):
+            os.mkdir("../logs")
 
     def save(self):
         """
@@ -94,6 +98,9 @@ class Logger:
         """
         self.name = name
         self.results = []
+
+        if not os.path.isdir("../logs"):
+            os.mkdir("../logs")
 
     def log(self, name, sim, iteration, fidelity, positions, centroids, max_var, argmax_var,
             p_explore, explore, distance, loss, regret, mse):

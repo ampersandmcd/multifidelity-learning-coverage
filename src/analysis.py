@@ -4,6 +4,8 @@ analysis.py
 Helper functions for simulation data post-processing and analysis.
 """
 
+import os
+
 import pandas as pd
 import matplotlib.pyplot as plt
 
@@ -228,11 +230,12 @@ if __name__ == "__main__":
 
     name = "bump_01_28_2021_23_49_40"
     csv_filename, img_basename = f"../logs/{name}.csv", f"../plots/{name}"
+    if not os.path.isdir("../plots"):
+        os.mkdir("../plots")
 
     df = pd.read_csv(csv_filename, header="infer", index_col=0)
     df["fidelity"] = df["fidelity"].fillna("na")        # interpret na fidelity level as string to keep data
     df = df[~df["fidelity"].str.contains("null")]       # drop null simulations
-    print()
 
     plot_loss(df, img_basename)
     plot_regret(df, img_basename)
@@ -241,4 +244,3 @@ if __name__ == "__main__":
     plot_distance(df, img_basename)
     plot_mse(df, img_basename)
 
-    print()
