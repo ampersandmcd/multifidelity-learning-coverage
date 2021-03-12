@@ -45,6 +45,41 @@ def plot_loss(df, filename):
     plt.show()
 
 
+def plot_regret(df, filename):
+
+    # collapse data by algorithm, fidelity and iteration number and take mean
+    mean_df = df.groupby(by=["name", "fidelity", "iteration"]).mean().reset_index()
+    mean_df["algorithm"] = mean_df["name"] + "_" + mean_df["fidelity"]
+    mean_df = mean_df[["algorithm", "iteration", "regret"]]
+    mean_pivot = mean_df.pivot(index="iteration", columns="algorithm", values="regret")
+
+    # subset data by smlc and dmlc
+    smlc = mean_pivot[[col for col in mean_pivot.columns if "smlc" in col or "cortes" in col]]
+    dmlc = mean_pivot[[col for col in mean_pivot.columns if "dmlc" in col or "cortes" in col]]
+
+    # reorganize to put cortes column at end
+    smlc = smlc[[col for col in smlc.columns if "cortes" not in col] + ["cortes_na"]]
+    dmlc = dmlc[[col for col in dmlc.columns if "cortes" not in col] + ["cortes_na"]]
+
+    # plot mean loss
+    fig, axs = plt.subplots(2, 1, figsize=constants.analysis_figsize)
+
+    smlc.plot(ax=axs[0])
+    axs[0].set_title("SMLC: Mean Regret by Iteration")
+    axs[0].set_ylabel("Regret")
+    axs[0].set_xlabel("Iteration")
+
+    dmlc.plot(ax=axs[1])
+    axs[1].set_title("DMLC: Mean Regret by Iteration")
+    axs[1].set_ylabel("Regret")
+    axs[1].set_xlabel("Iteration")
+
+    fig.tight_layout()
+    fig.subplots_adjust(wspace=1)
+    fig.savefig(f"{filename}_regret.png")
+    plt.show()
+
+
 def plot_cumulative_loss(df, filename):
 
     # collapse data by algorithm, fidelity and iteration number and take mean
@@ -196,8 +231,11 @@ if __name__ == "__main__":
 
     df = pd.read_csv(csv_filename, header="infer", index_col=0)
     df["fidelity"] = df["fidelity"].fillna("na")        # interpret na fidelity level as string to keep data
+    df = df[~df["fidelity"].str.contains("null")]       # drop null simulations
+    print()
 
     plot_loss(df, img_basename)
+    plot_regret(df, img_basename)
     plot_cumulative_loss(df, img_basename)
     plot_var(df, img_basename)
     plot_distance(df, img_basename)
