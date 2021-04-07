@@ -45,8 +45,8 @@ def cortes(experiment, data, logger, plotter, fidelity, sim):
         # log and plot progress
         logger.log("cortes", sim, iteration, fidelity, positions, centroids,
                    max_var, argmax_var, p_explore, explore, distance, loss, regret, mse)
-        plotter.plot(positions, data, partition, estimate=data.f_high, estimate_var=np.zeros(data.x1.shape),
-                     regret=regret, loss=loss)
+        plotter.plot(positions, data, partition, iteration, estimate=data.f_high, estimate_var=np.zeros(data.x1.shape),
+                     regret=regret, loss=loss, save_prefix="cortes")
 
         # update partition and centroids given perfect knowledge
         partition = utils.compute_partition(centroids, data, partition, experiment.gossip)
@@ -109,8 +109,9 @@ def stochastic_multifidelity_learning_coverage(experiment, data, logger, plotter
         # log and plot progress
         logger.log("smlc", sim, iteration, fidelity, positions, centroids,
                    max_var, argmax_var, p_explore, explore, distance, loss, regret, mse)
-        plotter.plot(positions, data, partition, estimate=mu_star.reshape(data.x1.shape),
-                     estimate_var=var_star.reshape(data.x1.shape), regret=regret, loss=loss, model=model)
+        plotter.plot(positions, data, partition, iteration, estimate=mu_star.reshape(data.x1.shape),
+                     estimate_var=var_star.reshape(data.x1.shape), regret=regret, loss=loss,
+                     model=model, save_prefix="smlc")
 
         # update partition and centroids based on estimate and previous centroids
         partition = utils.compute_partition(centroids, data, partition, experiment.gossip)
@@ -206,9 +207,9 @@ def deterministic_multifidelity_learning_coverage(experiment, data, logger, plot
             # log and plot progress
             logger.log("dmlc", sim, iteration, fidelity, positions, centroids,
                        max_var, argmax_var, p_explore, explore, distance, loss, regret, mse)
-            plotter.plot(positions, data, partition, estimate=mu_star.reshape(data.x1.shape),
+            plotter.plot(positions, data, partition, iteration, estimate=mu_star.reshape(data.x1.shape),
                          estimate_var=var_star.reshape(data.x1.shape), regret=regret, loss=loss, model=model,
-                         tsps0=sampling_tsps_0, tsps=sampling_tsps)
+                         tsps0=sampling_tsps_0, tsps=sampling_tsps, save_prefix="dmlc")
 
             # update partition if and only if all agents are on coverage phase
             if not np.any(explore):

@@ -231,7 +231,8 @@ class Plotter:
         ax.set_xlim(-0.1, 1.1)
         ax.set_ylim(-0.1, 1.1)
 
-    def plot(self, positions, data, partition, estimate, estimate_var, loss, regret, model=None, tsps0=None, tsps=None):
+    def plot(self, positions, data, partition, iteration, estimate, estimate_var, loss, regret,
+             model=None, tsps0=None, tsps=None, save_prefix="default"):
         """
         Plot current simulation status
         """
@@ -297,6 +298,7 @@ class Plotter:
         self.axes["loss"].set_title("Loss")
 
         # show figure
+        self.fig.savefig(f"uuraf/{self.name}_{save_prefix}_{iteration}.png")
         self.fig.show()
 
     def reset(self):
